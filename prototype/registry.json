@@ -1,0 +1,26 @@
+{
+  "code-review-agent": {
+    "agent_id": "nanda:did:agent:codereview-v1",
+    "name": "code-review-agent",
+    "facts_url": "http://127.0.0.1:7703/facts",
+    "public_key_hex": "ed5d58f0269fac41c10b8ce12b60d1162c4bde0ade0175ed71066a0b45ba16f1",
+    "registered_at": "2026-05-29T16:57:53.586714+00:00",
+    "ttl": 300
+  },
+  "weather-agent": {
+    "agent_id": "nanda:did:agent:weather-v1",
+    "name": "weather-agent",
+    "facts_url": "http://127.0.0.1:7701/facts",
+    "public_key_hex": "e96e86c9629e78b3fe10ad337e8411bdaf2cbeeb74cb2f64ad16c7149d35f8e3",
+    "registered_at": "2026-05-29T16:57:53.587148+00:00",
+    "ttl": 300
+  },
+  "calculator-agent": {
+    "agent_id": "nanda:did:agent:calculator-v2",
+    "name": "calculator-agent",
+    "facts_url": "http://127.0.0.1:7702/facts",
+    "public_key_hex": "396cc67b1c9271feb07e7f99c6233ee003e9152c2aa5796d83783127d1071839",
+    "registered_at": "2026-05-29T16:57:53.587362+00:00",
+    "ttl": 300
+  }
+}

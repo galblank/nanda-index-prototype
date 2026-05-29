@@ -1,0 +1,5 @@
+prototype/.venv/
+prototype/registry.json
+__pycache__/
+*.pyc
+.DS_Store
