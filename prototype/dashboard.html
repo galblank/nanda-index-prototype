@@ -133,6 +133,41 @@
     .empty { color: var(--muted); font-size: .8rem; padding: 1.5rem 0; text-align: center; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .pulsing { animation: pulse 1s ease-in-out infinite; }
+
+    /* ── Tamper ── */
+    .tamper-btns { display: flex; gap: .625rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .btn-red {
+      background: transparent; color: var(--red);
+      border: 1px solid var(--red); font: inherit; font-weight: 700; font-size: .8rem;
+      padding: .4rem 1rem; border-radius: .375rem; cursor: pointer; transition: background .15s, color .15s;
+    }
+    .btn-red:hover { background: var(--red); color: #0c1a2e; }
+    .btn-red:disabled { opacity: .35; cursor: not-allowed; }
+    .tamper-result {
+      border: 1px solid var(--border); border-radius: .5rem; overflow: hidden;
+      opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .3s;
+    }
+    .tamper-result.show { opacity: 1; transform: none; }
+    .tamper-header {
+      background: rgba(248,113,113,.1); border-bottom: 1px solid var(--border);
+      padding: .5rem .75rem; font-size: .75rem; font-weight: 700; color: var(--red);
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .tamper-body { padding: .75rem; font-size: .72rem; }
+    .diff-row { display: flex; gap: 1rem; margin-bottom: .75rem; }
+    .diff-col { flex: 1; min-width: 0; }
+    .diff-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: .3rem; }
+    .diff-val {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: .375rem; padding: .5rem .6rem;
+      word-break: break-all; line-height: 1.4;
+    }
+    .diff-val.original { border-color: var(--green); color: var(--green); }
+    .diff-val.tampered { border-color: var(--red);   color: var(--red);   }
+    .verdict {
+      text-align: center; padding: .5rem; font-weight: 700; font-size: .85rem;
+      border-radius: .375rem; background: rgba(248,113,113,.12); color: var(--red);
+    }
   </style>
 </head>
 <body>
@@ -157,6 +192,19 @@
     <h2>Resolution Flow — <span id="res-name" style="color:var(--text)"></span></h2>
     <div class="flow" id="flow"></div>
     <div id="steps"></div>
+  </section>
+
+  <section id="tamper-section" style="display:none">
+    <h2>Tamper Detection — <span id="tamper-agent-name" style="color:var(--text)"></span></h2>
+    <p style="font-size:.78rem;color:var(--muted);margin-bottom:1rem">
+      Apply a modification to the fetched facts and re-run verification with the original signature.
+      The signature must be rejected — any byte change breaks it.
+    </p>
+    <div class="tamper-btns">
+      <button class="btn-red" id="btn-desc"  onclick="runTamper('description')">✎ Overwrite description</button>
+      <button class="btn-red" id="btn-cap"   onclick="runTamper('capability')">⊕ Inject fake capability</button>
+    </div>
+    <div id="tamper-result"></div>
   </section>
 
   <script>
@@ -232,6 +280,13 @@
         await sleep(500);
       }
       document.getElementById('flow').innerHTML = flowHTML(d.steps.length, d.valid);
+
+      // reveal tamper section
+      const tamperSec = document.getElementById('tamper-section');
+      document.getElementById('tamper-agent-name').textContent = name;
+      document.getElementById('tamper-result').innerHTML = '';
+      tamperSec.style.display = 'block';
+
       sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
@@ -283,6 +338,60 @@
         msg.style.color = 'var(--red)';
       }
       await loadAgents();
+    }
+
+    // ── Tamper ───────────────────────────────────────────────────────────────
+    async function runTamper(type) {
+      const name = activeAgent;
+      if (!name) return;
+
+      const btnId  = type === 'description' ? 'btn-desc' : 'btn-cap';
+      const btn    = document.getElementById(btnId);
+      const result = document.getElementById('tamper-result');
+      btn.disabled = true;
+      result.innerHTML = '';
+
+      const r = await fetch(`/ui/tamper/${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type })
+      });
+      btn.disabled = false;
+
+      if (!r.ok) {
+        const e = await r.json();
+        result.innerHTML = `<div style="color:var(--red);font-size:.8rem">Error: ${e.detail}</div>`;
+        return;
+      }
+      const d = await r.json();
+
+      const label = type === 'description' ? 'description field overwritten' : 'fake capability injected';
+      const el = document.createElement('div');
+      el.className = 'tamper-result';
+      el.innerHTML = `
+        <div class="tamper-header">
+          ⚠ Tamper applied: ${label}
+          <span class="badge err" style="margin-left:auto">${d.valid ? 'ACCEPTED — broken!' : 'REJECTED ✓'}</span>
+        </div>
+        <div class="tamper-body">
+          <div class="diff-row">
+            <div class="diff-col">
+              <div class="diff-label">Original (authentic)</div>
+              <div class="diff-val original">${d.change.original}</div>
+            </div>
+            <div class="diff-col">
+              <div class="diff-label">Tampered value</div>
+              <div class="diff-val tampered">${d.change.tampered}</div>
+            </div>
+          </div>
+          <div class="kv" style="margin-bottom:.75rem">
+            <div class="kv-row"><span class="kv-key">original signature:</span><span class="kv-val">${d.original_sig} (unchanged)</span></div>
+            <div class="kv-row"><span class="kv-key">algorithm:</span><span class="kv-val">Ed25519.verify(public_key, canonical_JSON(tampered_facts), original_sig)</span></div>
+          </div>
+          <div class="verdict">${d.valid ? '✗ Signature accepted — tamper detection failed!' : '✓ Signature REJECTED — tamper detected correctly'}</div>
+        </div>`;
+      result.appendChild(el);
+      requestAnimationFrame(() => el.classList.add('show'));
     }
 
     // ── Boot ─────────────────────────────────────────────────────────────────

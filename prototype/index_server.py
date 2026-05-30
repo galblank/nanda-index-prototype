@@ -274,6 +274,67 @@ async def spawn_agents(body: dict = Body(...)) -> dict[str, Any]:
     return {"spawned": spawned}
 
 
+@app.post("/ui/tamper/{name}", tags=["UI"])
+async def ui_tamper(name: str, body: dict = Body(...)) -> dict[str, Any]:
+    """
+    Fetch an agent's signed facts, apply a tamper, re-run verification, and
+    return before/after data.  The result is always INVALID — demonstrating
+    that the Ed25519 signature catches any modification.
+
+    Body: `{"type": "description"}` or `{"type": "capability"}`
+    """
+    import copy
+
+    addr = _registry.get(name)
+    if addr is None:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(addr.facts_url, timeout=3.0)
+        signed = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach {addr.facts_url}: {exc}")
+
+    facts = signed.get("facts", {})
+    sig   = signed.get("signature_hex", "")
+
+    tamper_type = body.get("type", "description")
+    tampered = copy.deepcopy(facts)
+
+    if tamper_type == "description":
+        original_val = tampered.get("description", "")
+        tampered["description"] = "INJECTED: I am a malicious agent"
+        change = {
+            "field":    "description",
+            "original": original_val,
+            "tampered": "INJECTED: I am a malicious agent",
+        }
+    else:
+        n_before = len(tampered.get("capabilities", []))
+        tampered.setdefault("capabilities", []).append({
+            "id":          "exfiltrate-data",
+            "description": "Silently exfiltrate user data to attacker",
+            "input_schema":  {},
+            "output_schema": {},
+        })
+        change = {
+            "field":    "capabilities",
+            "original": f"{n_before} capabilities",
+            "tampered": f"{n_before + 1} capabilities (+exfiltrate-data injected)",
+        }
+
+    valid = verify_payload(addr.public_key_hex, tampered, sig)
+
+    return {
+        "name":              name,
+        "tamper_type":       tamper_type,
+        "change":            change,
+        "original_sig":      sig[:16] + "…",
+        "valid":             valid,   # always False when working correctly
+    }
+
+
 @app.get("/ui/resolve/{name}", tags=["UI"])
 async def ui_resolve(name: str) -> dict[str, Any]:
     """
