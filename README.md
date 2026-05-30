@@ -1,5 +1,11 @@
 # NANDA Index — Working Prototype
 
+Majority of the boilerplate code was written with Claude Sonnet 4.6
+Understanding the whitepaper, arcitecture and the goal of the project NANDA as a whole was my primary objective in order to efficiently execute the assignment.
+
+Generating keys was used with **cryptography.hazmat.primitives.asymmetric.ed25519** library as can be seen in requirements.txt.
+Visualization of the solution was built using
+
 A runnable prototype of the **NANDA Index** protocol from the paper
 [*Beyond DNS: Unlocking the Internet of AI Agents via the NANDA Index and Verified AgentFacts*](https://arxiv.org/abs/2507.14263) (Raskar et al., 2025).
 
@@ -193,10 +199,3 @@ prototype/
 ├── run_demo.py        # Demo orchestrator — starts all servers, runs client, shuts down
 └── schemas.py         # Pydantic models: AgentRegistration, AgentAddr, AgentFacts, SignedAgentFacts
 ```
-
-## Paper Reference
-
-Raskar, R., Chari, P., Zinky, J., Lambe, M., Grogan, J. J., Wang, S., Ranjan, R., Singhal, R., et al.
-*Beyond DNS: Unlocking the Internet of AI Agents via the NANDA Index and Verified AgentFacts.*
-arXiv:2507.14263 [cs.NI], 2025.
-https://arxiv.org/abs/2507.14263
