@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NANDA Index Dashboard</title>
+  <style>
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --text:    #e2e8f0;
+      --muted:   #94a3b8;
+      --accent:  #38bdf8;
+      --green:   #4ade80;
+      --red:     #f87171;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+      padding: 1.5rem 2rem;
+      line-height: 1.5;
+    }
+    h1  { font-size: 1.25rem; color: var(--accent); letter-spacing: .05em; }
+    .meta { color: var(--muted); font-size: .8rem; margin-bottom: 1.75rem; }
+
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: .625rem;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    h2 {
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    /* ── Spawn ── */
+    .spawn-row { display: flex; gap: .625rem; align-items: center; flex-wrap: wrap; }
+    input[type=number] {
+      background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: .4rem .65rem;
+      border-radius: .375rem; width: 5rem; font: inherit; font-size: .85rem;
+    }
+    input[type=number]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    .btn {
+      background: var(--accent); color: #0c1a2e;
+      font: inherit; font-weight: 700; font-size: .8rem;
+      border: none; padding: .4rem 1rem;
+      border-radius: .375rem; cursor: pointer; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-outline {
+      background: transparent; color: var(--accent);
+      border: 1px solid var(--accent);
+      width: 100%; margin-top: .5rem;
+      font-size: .7rem; padding: .3rem;
+    }
+    #spawn-msg { font-size: .775rem; color: var(--muted); }
+
+    /* ── Agent grid ── */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .75rem; }
+    .card {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: .5rem; padding: .875rem; cursor: pointer;
+      transition: border-color .15s;
+    }
+    .card:hover  { border-color: var(--accent); }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .card-name { font-weight: 700; font-size: .85rem; margin-bottom: .2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-id   { font-size: .65rem; color: var(--muted); margin-bottom: .5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-url  { font-size: .68rem; color: var(--muted); margin-bottom: .625rem; }
+
+    /* ── Resolution flow diagram ── */
+    .flow {
+      display: flex; align-items: center;
+      margin: 1rem 0 1.5rem; overflow-x: auto; padding-bottom: .25rem; gap: 0;
+    }
+    .node {
+      background: var(--bg); border: 2px solid var(--border);
+      border-radius: .4rem; padding: .35rem .65rem;
+      font-size: .75rem; white-space: nowrap; text-align: center;
+      transition: border-color .3s, color .3s; min-width: 88px;
+    }
+    .node.active  { border-color: var(--accent); color: var(--accent); }
+    .node.done    { border-color: var(--green);  color: var(--green);  }
+    .node.invalid { border-color: var(--red);    color: var(--red);    }
+    .arrow {
+      font-size: .9rem; padding: 0 .2rem;
+      color: var(--border); transition: color .3s; flex-shrink: 0;
+    }
+    .arrow.done   { color: var(--green);  }
+    .arrow.active { color: var(--accent); }
+
+    /* ── Steps ── */
+    .step {
+      display: flex; gap: .75rem; margin-bottom: .875rem;
+      opacity: 0; transform: translateY(6px);
+      transition: opacity .3s, transform .3s;
+    }
+    .step.show { opacity: 1; transform: none; }
+    .num {
+      width: 1.5rem; height: 1.5rem; border-radius: 50%;
+      background: var(--border); font-size: .7rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: .1rem; transition: background .3s, color .3s;
+    }
+    .num.active  { background: var(--accent); color: #0c1a2e; }
+    .num.valid   { background: var(--green);  color: #0c1a2e; }
+    .num.invalid { background: var(--red);    color: #fff;    }
+    .step-label { font-weight: 600; font-size: .825rem; margin-bottom: .2rem; display: flex; align-items: center; gap: .5rem; }
+    .step-url   { font-size: .68rem; color: var(--muted); margin-bottom: .4rem; word-break: break-all; }
+    .kv {
+      font-size: .72rem; background: var(--bg);
+      border: 1px solid var(--border); border-radius: .375rem;
+      padding: .6rem .75rem;
+    }
+    .kv-row { margin-bottom: .15rem; }
+    .kv-key { color: var(--muted); }
+    .kv-val { margin-left: .35rem; }
+
+    .badge { display: inline-block; padding: .1rem .45rem; border-radius: .25rem; font-size: .68rem; font-weight: 700; }
+    .ok  { background: rgba(74,222,128,.15); color: var(--green); }
+    .err { background: rgba(248,113,113,.15); color: var(--red);  }
+
+    .empty { color: var(--muted); font-size: .8rem; padding: 1.5rem 0; text-align: center; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .pulsing { animation: pulse 1s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+  <h1>NANDA Index</h1>
+  <p class="meta" id="meta">Loading…</p>
+
+  <section>
+    <h2>Spawn Agents</h2>
+    <div class="spawn-row">
+      <input id="count" type="number" value="1" min="1" max="10">
+      <button class="btn" id="spawn-btn" onclick="spawnAgents()">Spawn</button>
+      <span id="spawn-msg"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Registered Agents</h2>
+    <div class="grid" id="grid"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section id="res-section" style="display:none">
+    <h2>Resolution Flow — <span id="res-name" style="color:var(--text)"></span></h2>
+    <div class="flow" id="flow"></div>
+    <div id="steps"></div>
+  </section>
+
+  <script>
+    let activeAgent = null;
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    // ── Flow diagram ─────────────────────────────────────────────────────────
+    function flowHTML(currentStep, valid) {
+      const nodes   = ['Client', 'NANDA Index', 'Agent Server', valid === false ? '✗ Rejected' : '✓ Verified'];
+      const arrows  = ['①→', '②→', '③→'];
+      let h = '';
+      for (let i = 0; i < nodes.length; i++) {
+        let cls = '';
+        if (i < currentStep)      cls = (i === 3 && valid === false) ? 'invalid' : 'done';
+        else if (i === currentStep) cls = 'active';
+        h += `<div class="node ${cls}">${nodes[i]}</div>`;
+        if (i < arrows.length) {
+          const ac = currentStep > i ? 'done' : currentStep === i ? 'active' : '';
+          h += `<div class="arrow ${ac}"> ${arrows[i]} </div>`;
+        }
+      }
+      return h;
+    }
+
+    // ── Agent cards ──────────────────────────────────────────────────────────
+    async function loadAgents() {
+      const r = await fetch('/agents');
+      const d = await r.json();
+      document.getElementById('meta').textContent =
+        `${d.count} agent${d.count !== 1 ? 's' : ''} registered  ·  index at port 7700`;
+
+      const grid = document.getElementById('grid');
+      if (!d.count) {
+        grid.innerHTML = '<div class="empty">No agents registered. Spawn some above, or start the agent servers.</div>';
+        return;
+      }
+      grid.innerHTML = d.agents.map(a => `
+        <div class="card ${activeAgent === a.name ? 'active' : ''}" onclick="resolve('${a.name}')">
+          <div class="card-name">${a.name}</div>
+          <div class="card-id">${a.agent_id}</div>
+          <div class="card-url">${a.facts_url.replace('http://127.0.0.1', '⬡')}</div>
+          <button class="btn btn-outline" onclick="event.stopPropagation();resolve('${a.name}')">Resolve →</button>
+        </div>`).join('');
+    }
+
+    // ── Resolution ───────────────────────────────────────────────────────────
+    async function resolve(name) {
+      activeAgent = name;
+      await loadAgents();
+
+      const sec = document.getElementById('res-section');
+      sec.style.display = 'block';
+      document.getElementById('res-name').textContent = name;
+      document.getElementById('flow').innerHTML  = flowHTML(0, null);
+      document.getElementById('steps').innerHTML = '';
+
+      const r = await fetch(`/ui/resolve/${encodeURIComponent(name)}`);
+      if (!r.ok) {
+        const e = await r.json();
+        document.getElementById('steps').innerHTML =
+          `<div style="color:var(--red);font-size:.8rem">Error: ${e.detail}</div>`;
+        return;
+      }
+      const d = await r.json();
+
+      for (let i = 0; i < d.steps.length; i++) {
+        const isLast  = i === d.steps.length - 1;
+        const stepNum = i + 1;
+        document.getElementById('flow').innerHTML = flowHTML(stepNum, isLast ? d.valid : null);
+        await sleep(350);
+        addStep(d.steps[i], isLast ? d.valid : null);
+        await sleep(500);
+      }
+      document.getElementById('flow').innerHTML = flowHTML(d.steps.length, d.valid);
+      sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function addStep(s, valid) {
+      const badge = valid !== null
+        ? (valid ? '<span class="badge ok">VALID</span>' : '<span class="badge err">INVALID</span>')
+        : '';
+      const numCls = valid !== null ? (valid ? 'valid' : 'invalid') : 'active';
+      const rows = Object.entries(s.data).map(([k, v]) => {
+        const val = Array.isArray(v) ? (v.length ? v.join(', ') : '—') : (v || '—');
+        return `<div class="kv-row"><span class="kv-key">${k}:</span><span class="kv-val">${val}</span></div>`;
+      }).join('');
+
+      const el = document.createElement('div');
+      el.className = 'step';
+      el.innerHTML = `
+        <div class="num ${numCls}">${s.id}</div>
+        <div style="flex:1;min-width:0">
+          <div class="step-label">${s.label} ${badge}</div>
+          <div class="step-url">${s.url}</div>
+          <div class="kv">${rows}</div>
+        </div>`;
+      document.getElementById('steps').appendChild(el);
+      requestAnimationFrame(() => el.classList.add('show'));
+    }
+
+    // ── Spawn ────────────────────────────────────────────────────────────────
+    async function spawnAgents() {
+      const count = parseInt(document.getElementById('count').value, 10) || 1;
+      const btn   = document.getElementById('spawn-btn');
+      const msg   = document.getElementById('spawn-msg');
+      btn.disabled = true;
+      msg.textContent = `Spawning ${count} agent${count > 1 ? 's' : ''}…`;
+      msg.classList.add('pulsing');
+
+      const r = await fetch('/ui/spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count })
+      });
+      const d = await r.json();
+      msg.classList.remove('pulsing');
+      btn.disabled = false;
+
+      if (r.ok) {
+        msg.textContent = '✓ ' + d.spawned.map(a => a.name).join(', ');
+      } else {
+        msg.textContent = '✗ ' + (d.detail || 'spawn failed');
+        msg.style.color = 'var(--red)';
+      }
+      await loadAgents();
+    }
+
+    // ── Boot ─────────────────────────────────────────────────────────────────
+    loadAgents();
+    setInterval(loadAgents, 3000);
+  </script>
+</body>
+</html>

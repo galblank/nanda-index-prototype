@@ -19,17 +19,22 @@ Endpoints:
   GET  /health                — Liveness check
 """
 
+import asyncio
 import json
 import logging
+import socket
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi import Body, FastAPI, HTTPException, status
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from crypto_utils import generate_keypair, public_key_to_hex
+from crypto_utils import generate_keypair, public_key_to_hex, verify_payload
 from schemas import AgentAddr, AgentRegistration
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [index] %(message)s")
@@ -40,6 +45,31 @@ app = FastAPI(
     description="Agent name resolution service — index → AgentAddr",
     version="0.1.0",
 )
+
+HERE = Path(__file__).parent
+_PORT: int = 7700   # updated in __main__ before uvicorn starts
+
+# Tracks subprocesses spawned via the web UI (name → Popen)
+_spawned_procs: dict[str, subprocess.Popen] = {}
+
+# Pool of named agent templates for dynamic spawning
+_DYNAMIC_TEMPLATES = [
+    "translate-agent", "search-agent", "summarizer-agent", "vision-agent",
+    "scheduler-agent", "data-agent", "audio-agent", "embeddings-agent",
+]
+
+
+def _find_free_port(start: int = 7710) -> int:
+    """Find the first available TCP port at or after `start`."""
+    port = start
+    while port < 8000:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                port += 1
+    raise RuntimeError("No free port available in range 7710-8000")
 
 # ---------------------------------------------------------------------------
 # Persistence helpers
@@ -178,6 +208,137 @@ async def generate_keypair_endpoint() -> dict[str, str]:
     return {"public_key_hex": public_key_to_hex(public_key)}
 
 
+# ---------------------------------------------------------------------------
+# Web UI
+# ---------------------------------------------------------------------------
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard() -> str:
+    """Serve the interactive NANDA dashboard."""
+    return (HERE / "dashboard.html").read_text()
+
+
+@app.post("/ui/spawn", tags=["UI"])
+async def spawn_agents(body: dict = Body(...)) -> dict[str, Any]:
+    """
+    Spawn N new agent servers and register them with the index.
+
+    Pass `{"count": N}` in the request body (max 10 per call).
+    Each agent is assigned the next available port starting at 7710 and
+    self-registers automatically once healthy.
+    """
+    count = max(1, min(int(body.get("count", 1)), 10))
+    used = set(_registry) | set(_spawned_procs)
+    available = [t for t in _DYNAMIC_TEMPLATES if t not in used]
+
+    spawned = []
+    for _ in range(count):
+        if available:
+            name = available.pop(0)
+        else:
+            i = 1
+            while f"agent-{i}" in used:
+                i += 1
+            name = f"agent-{i}"
+        used.add(name)
+
+        port = _find_free_port()
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(HERE / "agent_server.py"),
+                "--name", name,
+                "--port", str(port),
+                "--index-url", f"http://127.0.0.1:{_PORT}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _spawned_procs[name] = proc
+
+        # Poll until the agent is healthy (up to 5 s)
+        healthy = False
+        for _ in range(25):
+            try:
+                async with httpx.AsyncClient() as c:
+                    r = await c.get(f"http://127.0.0.1:{port}/health", timeout=0.5)
+                    if r.status_code == 200:
+                        healthy = True
+                        break
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+
+        spawned.append({"name": name, "port": port, "healthy": healthy})
+
+    return {"spawned": spawned}
+
+
+@app.get("/ui/resolve/{name}", tags=["UI"])
+async def ui_resolve(name: str) -> dict[str, Any]:
+    """
+    Full three-step resolution flow for one agent, returning structured
+    step data for the dashboard's animated visualisation.
+    """
+    # Step 1 — index lookup
+    addr = _registry.get(name)
+    if addr is None:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found in index")
+
+    # Step 2 — fetch signed facts directly from the agent
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(addr.facts_url, timeout=3.0)
+        signed = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach {addr.facts_url}: {exc}")
+
+    # Step 3 — cryptographic verification
+    facts = signed.get("facts", {})
+    sig   = signed.get("signature_hex", "")
+    valid = verify_payload(addr.public_key_hex, facts, sig)
+
+    return {
+        "name": name,
+        "valid": valid,
+        "steps": [
+            {
+                "id": 1,
+                "label": "Index Lookup",
+                "url": f"GET /resolve/{name}",
+                "data": {
+                    "agent_id":   addr.agent_id,
+                    "facts_url":  addr.facts_url,
+                    "public_key": addr.public_key_hex[:16] + "…",
+                    "ttl":        f"{addr.ttl}s",
+                },
+            },
+            {
+                "id": 2,
+                "label": "Fetch AgentFacts",
+                "url": f"GET {addr.facts_url}",
+                "data": {
+                    "description":  facts.get("description", ""),
+                    "version":      facts.get("version", ""),
+                    "capabilities": [c["id"] for c in facts.get("capabilities", [])],
+                    "endpoints":    [e["url"] for e in facts.get("endpoints", [])],
+                    "signature":    sig[:16] + "…",
+                },
+            },
+            {
+                "id": 3,
+                "label": "Verify Signature",
+                "url": "Ed25519.verify(public_key, canonical_JSON(facts), signature)",
+                "data": {
+                    "result":    "VALID" if valid else "INVALID",
+                    "algorithm": "Ed25519",
+                    "encoding":  "canonical JSON (sort_keys=True)",
+                },
+            },
+        ],
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "nanda-index"}
@@ -195,4 +356,5 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=7700)
     args = parser.parse_args()
 
+    _PORT = args.port   # make port available to UI spawn endpoint
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
