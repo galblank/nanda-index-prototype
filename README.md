@@ -174,40 +174,7 @@ Enter a count (1–10) and click **Spawn**. The server starts that many agent pr
 
 Click **Resolve →** on any agent card to trigger the full three-step resolution flow. Each step lights up and expands with the actual response data:
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  NANDA Index                      3 agents registered            │
-├──────────────────────────────────────────────────────────────────┤
-│  Spawn Agents   [__2__]  [Spawn]                                 │
-├──────────────────────────────────────────────────────────────────┤
-│  Registered Agents                                               │
-│  ┌──────────────┐  ┌───────────────┐  ┌─────────────────┐       │
-│  │ weather-agent│  │calculator-agnt│  │code-review-agent│       │
-│  │ ⬡:7701/facts │  │ ⬡:7702/facts  │  │ ⬡:7703/facts    │       │
-│  │ [Resolve →]  │  │ [Resolve →]   │  │ [Resolve →]     │       │
-│  └──────────────┘  └───────────────┘  └─────────────────┘       │
-├──────────────────────────────────────────────────────────────────┤
-│  Resolution Flow — weather-agent                                 │
-│                                                                  │
-│  [Client] ①→ [NANDA Index] ②→ [Agent Server] ③→ [✓ Verified]   │
-│                                                                  │
-│  ① Index Lookup                                                  │
-│    agent_id:   nanda:did:agent:weather-v1                        │
-│    facts_url:  http://127.0.0.1:7701/facts                       │
-│    public_key: 43fd611b2021708e…                                 │
-│    ttl:        300s                                              │
-│                                                                  │
-│  ② Fetch AgentFacts                          VALID               │
-│    description:  Provides real-time weather data…               │
-│    capabilities: get-current-weather, get-forecast, get-alerts   │
-│    endpoints:    https://weather.example.com/mcp, …             │
-│    signature:    12a240f25edf779c…                               │
-│                                                                  │
-│  ③ Verify Signature                          ✓ VALID             │
-│    algorithm:  Ed25519                                           │
-│    encoding:   canonical JSON (sort_keys=True)                   │
-└──────────────────────────────────────────────────────────────────┘
-```
+![NANDA Dashboard](illustration_dash.png)
 
 The agent cards auto-refresh every 3 seconds, so newly spawned agents appear without a page reload.
 
