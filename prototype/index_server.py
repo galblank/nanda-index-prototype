@@ -120,6 +120,25 @@ async def register_agent(payload: AgentRegistration) -> dict[str, Any]:
     """
     if not payload.name:
         raise HTTPException(status_code=400, detail="Agent name must not be empty")
+
+    reg_type = payload.registration_type
+
+    # Type-specific validation
+    if reg_type == "enterprise":
+        if not payload.gateway_url or not payload.gateway_url.startswith(("http://", "https://")):
+            raise HTTPException(
+                status_code=400,
+                detail="enterprise registration requires a valid gateway_url (http/https)",
+            )
+    elif reg_type == "did":
+        if not payload.agent_id.startswith("did:"):
+            raise HTTPException(
+                status_code=400,
+                detail="DID registration requires agent_id in did:<method>:<identifier> format",
+            )
+        if payload.did_document_url and not payload.did_document_url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="did_document_url must be an HTTP(S) URL")
+
     if not payload.facts_url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="facts_url must be an HTTP(S) URL")
     if len(payload.public_key_hex) != 64:
@@ -135,6 +154,9 @@ async def register_agent(payload: AgentRegistration) -> dict[str, Any]:
         public_key_hex=payload.public_key_hex,
         registered_at=datetime.now(timezone.utc).isoformat(),
         ttl=payload.ttl,
+        registration_type=payload.registration_type,
+        gateway_url=payload.gateway_url,
+        did_document_url=payload.did_document_url,
     )
     _registry[payload.name] = addr
     _save_registry()
@@ -174,7 +196,13 @@ async def list_agents() -> dict[str, Any]:
     return {
         "count": len(_registry),
         "agents": [
-            {"name": k, "agent_id": v.agent_id, "facts_url": v.facts_url}
+            {
+                "name": k,
+                "agent_id": v.agent_id,
+                "facts_url": v.facts_url,
+                "registration_type": v.registration_type,
+                "gateway_url": v.gateway_url,
+            }
             for k, v in _registry.items()
         ],
     }
@@ -223,11 +251,14 @@ async def spawn_agents(body: dict = Body(...)) -> dict[str, Any]:
     """
     Spawn N new agent servers and register them with the index.
 
-    Pass `{"count": N}` in the request body (max 10 per call).
-    Each agent is assigned the next available port starting at 7710 and
-    self-registers automatically once healthy.
+    Pass `{"count": N, "registration_type": "native"|"enterprise"|"did"}` in the
+    request body (max 10 per call, default type: native).
     """
     count = max(1, min(int(body.get("count", 1)), 10))
+    reg_type = body.get("registration_type", "native")
+    if reg_type not in ("native", "enterprise", "did"):
+        reg_type = "native"
+
     used = set(_registry) | set(_spawned_procs)
     available = [t for t in _DYNAMIC_TEMPLATES if t not in used]
 
@@ -243,17 +274,17 @@ async def spawn_agents(body: dict = Body(...)) -> dict[str, Any]:
         used.add(name)
 
         port = _find_free_port()
-        proc = subprocess.Popen(
-            [
-                sys.executable,
-                str(HERE / "agent_server.py"),
-                "--name", name,
-                "--port", str(port),
-                "--index-url", f"http://127.0.0.1:{_PORT}",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        cmd = [
+            sys.executable,
+            str(HERE / "agent_server.py"),
+            "--name", name,
+            "--port", str(port),
+            "--index-url", f"http://127.0.0.1:{_PORT}",
+            "--registration-type", reg_type,
+        ]
+        if reg_type == "enterprise":
+            cmd += ["--gateway-url", f"http://enterprise-gateway.example.corp/api/{name}"]
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _spawned_procs[name] = proc
 
         # Poll until the agent is healthy (up to 5 s)
@@ -269,7 +300,7 @@ async def spawn_agents(body: dict = Body(...)) -> dict[str, Any]:
                 pass
             await asyncio.sleep(0.2)
 
-        spawned.append({"name": name, "port": port, "healthy": healthy})
+        spawned.append({"name": name, "port": port, "healthy": healthy, "registration_type": reg_type})
 
     return {"spawned": spawned}
 
@@ -371,8 +402,13 @@ async def ui_resolve(name: str) -> dict[str, Any]:
                     "agent_id":   addr.agent_id,
                     "facts_url":  addr.facts_url,
                     "public_key": addr.public_key_hex[:16] + "…",
-                    "ttl":        f"{addr.ttl}s",
-                },
+                    "ttl":        f"{addr.ttl}s",                    "type":       addr.registration_type,
+                    **({
+                        "gateway": addr.gateway_url
+                    } if addr.gateway_url else {}),
+                    **({
+                        "did_doc": addr.did_document_url
+                    } if addr.did_document_url else {}),                },
             },
             {
                 "id": 2,
@@ -396,6 +432,41 @@ async def ui_resolve(name: str) -> dict[str, Any]:
                     "encoding":  "canonical JSON (sort_keys=True)",
                 },
             },
+        ],
+    }
+
+
+@app.get("/did/{name}", tags=["DID"])
+async def did_document(name: str) -> dict[str, Any]:
+    """
+    Return a minimal W3C DID document for a DID-registered agent.
+
+    In production this would be served from a DID-method resolver (did:web,
+    did:ion, etc.).  Here the NANDA Index acts as a lightweight did:nanda
+    resolver, deriving the DID document directly from the registry record.
+    """
+    addr = _registry.get(name)
+    if addr is None or addr.registration_type != "did":
+        raise HTTPException(status_code=404, detail=f"No DID document for '{name}'")
+
+    return {
+        "@context": ["https://www.w3.org/ns/did/v1"],
+        "id": addr.agent_id,
+        "verificationMethod": [
+            {
+                "id": f"{addr.agent_id}#key-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": addr.agent_id,
+                "publicKeyHex": addr.public_key_hex,
+            }
+        ],
+        "authentication": [f"{addr.agent_id}#key-1"],
+        "service": [
+            {
+                "id": f"{addr.agent_id}#agent-facts",
+                "type": "NANDAAgentFacts",
+                "serviceEndpoint": addr.facts_url,
+            }
         ],
     }
 

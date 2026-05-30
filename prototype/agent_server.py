@@ -338,10 +338,19 @@ AGENT_CATALOGUE: dict[str, dict[str, Any]] = {
 # Server factory
 # ---------------------------------------------------------------------------
 
-def build_app(agent_name: str, own_port: int, index_url: str) -> FastAPI:
+def build_app(
+    agent_name: str,
+    own_port: int,
+    index_url: str,
+    registration_type: str = "native",
+    gateway_url: str | None = None,
+) -> FastAPI:
     """
     Build a FastAPI app for the given agent.
     Generates a keypair, creates signed AgentFacts, and self-registers.
+
+    registration_type — one of: 'native', 'enterprise', 'did'
+    gateway_url       — enterprise API gateway URL (enterprise type only)
     """
     logger = logging.getLogger(agent_name)
 
@@ -428,12 +437,24 @@ def build_app(agent_name: str, own_port: int, index_url: str) -> FastAPI:
     @app.on_event("startup")
     async def self_register() -> None:
         facts_url = f"http://127.0.0.1:{own_port}/facts"
+
+        # DID registration: ensure agent_id is a proper DID; derive did_document_url
+        reg_agent_id = cfg["agent_id"]
+        did_document_url: str | None = None
+        if registration_type == "did":
+            if not reg_agent_id.startswith("did:"):
+                reg_agent_id = f"did:nanda:{agent_name}"
+            did_document_url = f"{index_url}/did/{agent_name}"
+
         registration = AgentRegistration(
-            agent_id=cfg["agent_id"],
+            agent_id=reg_agent_id,
             name=agent_name,
             facts_url=facts_url,
             public_key_hex=pub_hex,
             ttl=300,
+            registration_type=registration_type,
+            gateway_url=gateway_url,
+            did_document_url=did_document_url,
         )
         try:
             async with httpx.AsyncClient() as client:
@@ -467,7 +488,24 @@ if __name__ == "__main__":
         default="http://127.0.0.1:7700",
         help="URL of the NANDA Index for self-registration",
     )
+    parser.add_argument(
+        "--registration-type",
+        default="native",
+        choices=["native", "enterprise", "did"],
+        help="Registration type: native (direct), enterprise (gateway-routed), or did (DID-based identity)",
+    )
+    parser.add_argument(
+        "--gateway-url",
+        default=None,
+        help="Enterprise API gateway URL (used only with --registration-type enterprise)",
+    )
     args = parser.parse_args()
 
-    app = build_app(args.name, args.port, args.index_url)
+    app = build_app(
+        args.name,
+        args.port,
+        args.index_url,
+        registration_type=args.registration_type,
+        gateway_url=args.gateway_url,
+    )
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

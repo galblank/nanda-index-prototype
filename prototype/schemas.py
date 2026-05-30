@@ -11,7 +11,7 @@ Three-layer protocol objects that mirror the paper's architecture:
 
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Any
+from typing import Any, Literal
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +83,18 @@ class AgentAddr(BaseModel):
     )
     registered_at: str
     ttl: int = Field(default=300, description="Cache TTL in seconds")
+    registration_type: Literal["native", "enterprise", "did"] = Field(
+        default="native",
+        description="How this agent registered: nanda-native, enterprise-routed, or DID-based",
+    )
+    gateway_url: str | None = Field(
+        default=None,
+        description="Enterprise gateway URL (enterprise type only)",
+    )
+    did_document_url: str | None = Field(
+        default=None,
+        description="URL of the DID document for key resolution (did type only)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +108,10 @@ class AgentRegistration(BaseModel):
     facts_url: str
     public_key_hex: str
     ttl: int = 300
+    registration_type: Literal["native", "enterprise", "did"] = "native"
+    gateway_url: str | None = None       # enterprise: the API gateway fronting this agent
+    enterprise_id: str | None = None     # enterprise: org/tenant identifier
+    did_document_url: str | None = None  # did: URL of the DID document for key resolution
 
 
 # ---------------------------------------------------------------------------

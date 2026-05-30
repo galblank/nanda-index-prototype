@@ -134,6 +134,16 @@
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .pulsing { animation: pulse 1s ease-in-out infinite; }
 
+    /* ── Registration type badges ── */
+    .type-badge {
+      display: inline-block; padding: .05rem .35rem;
+      border-radius: .25rem; font-size: .6rem; font-weight: 700;
+      letter-spacing: .05em; vertical-align: middle; margin-left: .25rem;
+    }
+    .type-native     { background: rgba(56,189,248,.15); color: var(--accent); }
+    .type-enterprise { background: rgba(251,191,36,.15);  color: #fbbf24; }
+    .type-did        { background: rgba(167,139,250,.15); color: #a78bfa; }
+
     /* ── Tamper ── */
     .tamper-btns { display: flex; gap: .625rem; flex-wrap: wrap; margin-bottom: 1rem; }
     .btn-red {
@@ -178,6 +188,11 @@
     <h2>Spawn Agents</h2>
     <div class="spawn-row">
       <input id="count" type="number" value="1" min="1" max="10">
+      <select id="reg-type" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:.4rem .65rem;border-radius:.375rem;font:inherit;font-size:.8rem;cursor:pointer">
+        <option value="native">native</option>
+        <option value="enterprise">enterprise</option>
+        <option value="did">DID-based</option>
+      </select>
       <button class="btn" id="spawn-btn" onclick="spawnAgents()">Spawn</button>
       <span id="spawn-msg"></span>
     </div>
@@ -242,13 +257,21 @@
         grid.innerHTML = '<div class="empty">No agents registered. Spawn some above, or start the agent servers.</div>';
         return;
       }
-      grid.innerHTML = d.agents.map(a => `
+      grid.innerHTML = d.agents.map(a => {
+        const typeCls = `type-${a.registration_type || 'native'}`;
+        const typeLabel = (a.registration_type || 'native').toUpperCase();
+        const gwLine = a.gateway_url
+          ? `<div class="card-url" style="color:#fbbf24">⇢ ${a.gateway_url.replace('http://', '')}</div>`
+          : '';
+        return `
         <div class="card ${activeAgent === a.name ? 'active' : ''}" onclick="resolve('${a.name}')">
-          <div class="card-name">${a.name}</div>
+          <div class="card-name">${a.name}<span class="type-badge ${typeCls}">${typeLabel}</span></div>
           <div class="card-id">${a.agent_id}</div>
-          <div class="card-url">${a.facts_url.replace('http://127.0.0.1', '⬡')}</div>
+          <div class="card-url">${a.facts_url.replace('http://127.0.0.1', '\u29c1')}</div>
+          ${gwLine}
           <button class="btn btn-outline" onclick="event.stopPropagation();resolve('${a.name}')">Resolve →</button>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
 
     // ── Resolution ───────────────────────────────────────────────────────────
@@ -325,7 +348,10 @@
       const r = await fetch('/ui/spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count })
+        body: JSON.stringify({
+          count,
+          registration_type: document.getElementById('reg-type').value,
+        })
       });
       const d = await r.json();
       msg.classList.remove('pulsing');
