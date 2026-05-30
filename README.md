@@ -184,6 +184,47 @@ Click **Resolve →** on any agent card to trigger the full three-step resolutio
 
 The agent cards auto-refresh every 3 seconds, so newly spawned agents appear without a page reload.
 
+### Interactive Tamper Detection
+
+After resolving any agent, a **Tamper Detection** panel appears below the flow diagram. It lets you witness in the browser exactly what the paper describes — that any modification to a signed facts document will be cryptographically rejected.
+
+Two attack types are available:
+
+| Button | What it does |
+|---|---|
+| **✎ Overwrite description** | Replaces the agent's `description` field with `"INJECTED: I am a malicious agent"` |
+| **⊕ Inject fake capability** | Appends an `exfiltrate-data` capability to the capability list |
+
+Clicking either button:
+1. The index server fetches the agent's live facts and applies the chosen modification
+2. The original unmodified Ed25519 signature is kept — the attacker cannot re-sign
+3. `Ed25519.verify(public_key, canonical_JSON(tampered_facts), original_sig)` is run
+4. The result is always **REJECTED** — shown with a side-by-side diff of the original vs tampered value and a red `REJECTED ✓` verdict badge
+
+```
+⚠ Tamper applied: description field overwritten         [REJECTED ✓]
+
+  Original (authentic)                Tampered value
+  ┌──────────────────────────┐        ┌─────────────────────────────────┐
+  │ Provides real-time       │        │ INJECTED: I am a malicious      │
+  │ weather data and         │        │ agent                           │
+  │ multi-day forecasts      │        └─────────────────────────────────┘
+  └──────────────────────────┘
+
+  original signature: 12a240f2… (unchanged)
+  algorithm: Ed25519.verify(public_key, canonical_JSON(tampered_facts), original_sig)
+
+  ✓ Signature REJECTED — tamper detected correctly
+```
+
+The dashboard also exposes two additional index endpoints that power these features:
+
+| Endpoint | Description |
+|---|---|
+| `POST /ui/spawn` | Spawn N agent processes; health-polls each before returning |
+| `GET  /ui/resolve/{name}` | Structured 3-step resolution data for the animated flow |
+| `POST /ui/tamper/{name}` | Fetch live facts, apply tamper, re-verify; returns change diff + verdict |
+
 ---
 
 ## Project Structure
