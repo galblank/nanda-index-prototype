@@ -27,7 +27,7 @@ python agent_server.py --name calculator-agent  --port 7702 --index-url http://1
 python agent_server.py --name code-review-agent --port 7703 --index-url http://127.0.0.1:7700 &
 ```
 
-Then open **http://127.0.0.1:7700/docs** for the interactive Swagger UI.
+Then open **http://127.0.0.1:7700** for the interactive dashboard, or **http://127.0.0.1:7700/docs** for the Swagger UI.
 
 ---
 
@@ -162,6 +162,57 @@ The signature covers the **serialized content** of the entire facts document. An
 
 ---
 
+## Dashboard Web UI
+
+The index server serves an interactive dashboard at **http://127.0.0.1:7700** that lets you spawn agents and watch the resolution flow animate in real time — no CLI required.
+
+### Spawn Agents
+
+Enter a count (1–10) and click **Spawn**. The server starts that many agent processes on available ports (7710+), each of which generates a fresh Ed25519 keypair and self-registers with the index. Agents are drawn from a pool of named archetypes (translate, search, summarizer, vision, scheduler, data, audio, embeddings) and fall back to numbered generics once the pool is exhausted.
+
+### Visualize Resolution
+
+Click **Resolve →** on any agent card to trigger the full three-step resolution flow. Each step lights up and expands with the actual response data:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  NANDA Index                      3 agents registered            │
+├──────────────────────────────────────────────────────────────────┤
+│  Spawn Agents   [__2__]  [Spawn]                                 │
+├──────────────────────────────────────────────────────────────────┤
+│  Registered Agents                                               │
+│  ┌──────────────┐  ┌───────────────┐  ┌─────────────────┐       │
+│  │ weather-agent│  │calculator-agnt│  │code-review-agent│       │
+│  │ ⬡:7701/facts │  │ ⬡:7702/facts  │  │ ⬡:7703/facts    │       │
+│  │ [Resolve →]  │  │ [Resolve →]   │  │ [Resolve →]     │       │
+│  └──────────────┘  └───────────────┘  └─────────────────┘       │
+├──────────────────────────────────────────────────────────────────┤
+│  Resolution Flow — weather-agent                                 │
+│                                                                  │
+│  [Client] ①→ [NANDA Index] ②→ [Agent Server] ③→ [✓ Verified]   │
+│                                                                  │
+│  ① Index Lookup                                                  │
+│    agent_id:   nanda:did:agent:weather-v1                        │
+│    facts_url:  http://127.0.0.1:7701/facts                       │
+│    public_key: 43fd611b2021708e…                                 │
+│    ttl:        300s                                              │
+│                                                                  │
+│  ② Fetch AgentFacts                          VALID               │
+│    description:  Provides real-time weather data…               │
+│    capabilities: get-current-weather, get-forecast, get-alerts   │
+│    endpoints:    https://weather.example.com/mcp, …             │
+│    signature:    12a240f25edf779c…                               │
+│                                                                  │
+│  ③ Verify Signature                          ✓ VALID             │
+│    algorithm:  Ed25519                                           │
+│    encoding:   canonical JSON (sort_keys=True)                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+The agent cards auto-refresh every 3 seconds, so newly spawned agents appear without a page reload.
+
+---
+
 ## Project Structure
 
 ```
@@ -169,22 +220,12 @@ prototype/
 ├── agent_server.py    # Per-agent FastAPI facts server (self-registers with index)
 ├── client.py          # Resolution client — runs the full demo flow
 ├── crypto_utils.py    # Ed25519 key generation, signing, and verification
+├── dashboard.html     # Web UI served at GET /
 ├── index_server.py    # NANDA Index server with persistent registry
 ├── requirements.txt   # fastapi, uvicorn, httpx, pydantic, cryptography
 ├── run_demo.py        # Demo orchestrator — starts all servers, runs client, shuts down
 └── schemas.py         # Pydantic models: AgentRegistration, AgentAddr, AgentFacts, SignedAgentFacts
 ```
-
-## Requirements Coverage (Level 1)
-
-| Requirement | Met |
-|---|---|
-| Client resolves agent name → verifiable AgentFacts | ✅ |
-| Core flow (index → AgentAddr → AgentFacts) visible in code | ✅ |
-| ≥ 2 agents registered | ✅ (3 agents) |
-| Client detects tampering | ✅ Ed25519 signed canonical JSON |
-| Resolution flow demonstrated ≥ twice | ✅ (3 times) |
-| Negative lookup (unregistered name → error) | ✅ 404 |
 
 ## Paper Reference
 
