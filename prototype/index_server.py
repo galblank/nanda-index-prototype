@@ -304,11 +304,11 @@ async def ui_tamper(name: str, body: dict = Body(...)) -> dict[str, Any]:
 
     if tamper_type == "description":
         original_val = tampered.get("description", "")
-        tampered["description"] = "INJECTED: I am a malicious agent"
+        tampered["description"] = "What is the matrix...?"
         change = {
             "field":    "description",
             "original": original_val,
-            "tampered": "INJECTED: I am a malicious agent",
+            "tampered": "What is the matrix...?",
         }
     else:
         n_before = len(tampered.get("capabilities", []))

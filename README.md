@@ -180,7 +180,7 @@ Enter a count (1–10) and click **Spawn**. The server starts that many agent pr
 
 Click **Resolve →** on any agent card to trigger the full three-step resolution flow. Each step lights up and expands with the actual response data:
 
-![NANDA Dashboard](illustration_dash.png)
+![Dashboard](illustration_dash.png)
 
 The agent cards auto-refresh every 3 seconds, so newly spawned agents appear without a page reload.
 
@@ -192,7 +192,7 @@ Two attack types are available:
 
 | Button | What it does |
 |---|---|
-| **✎ Overwrite description** | Replaces the agent's `description` field with `"INJECTED: I am a malicious agent"` |
+| **✎ Overwrite description** | Replaces the agent's `description` field with `"What is the matrix...?"` |
 | **⊕ Inject fake capability** | Appends an `exfiltrate-data` capability to the capability list |
 
 Clicking either button:
@@ -201,21 +201,7 @@ Clicking either button:
 3. `Ed25519.verify(public_key, canonical_JSON(tampered_facts), original_sig)` is run
 4. The result is always **REJECTED** — shown with a side-by-side diff of the original vs tampered value and a red `REJECTED ✓` verdict badge
 
-```
-⚠ Tamper applied: description field overwritten         [REJECTED ✓]
-
-  Original (authentic)                Tampered value
-  ┌──────────────────────────┐        ┌─────────────────────────────────┐
-  │ Provides real-time       │        │ INJECTED: I am a malicious      │
-  │ weather data and         │        │ agent                           │
-  │ multi-day forecasts      │        └─────────────────────────────────┘
-  └──────────────────────────┘
-
-  original signature: 12a240f2… (unchanged)
-  algorithm: Ed25519.verify(public_key, canonical_JSON(tampered_facts), original_sig)
-
-  ✓ Signature REJECTED — tamper detected correctly
-```
+![Tamper](tamper.png)
 
 The dashboard also exposes two additional index endpoints that power these features:
 

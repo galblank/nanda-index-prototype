@@ -176,7 +176,7 @@ def demo_tamper_detection(
     step(2, "Tamper: overwrite 'description' field")
     tampered = dict(facts)
     original_desc = tampered["description"]
-    tampered["description"] = "INJECTED: I am a malicious agent"
+    tampered["description"] = "What is the matrix...?"
     info(f"original  → \"{original_desc}\"")
     info(f"tampered  → \"{tampered['description']}\"")
 
