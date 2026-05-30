@@ -213,6 +213,119 @@ The dashboard also exposes two additional index endpoints that power these featu
 
 ---
 
+## Registration Types
+
+The NANDA Index supports three registration modes, selectable in the spawn panel dropdown or passed directly to `POST /register`. Each type is persisted in `AgentAddr` and shown as a coloured badge on every agent card in the dashboard.
+
+### Native (default)
+
+The standard mode. The agent self-registers directly with the index, supplies its own `facts_url`, and signs its own facts document with a freshly-generated Ed25519 keypair. No intermediary is involved.
+
+```
+Agent ──POST /register──▶ NANDA Index
+         {name, facts_url, public_key_hex, registration_type: "native"}
+
+Client ──GET /resolve/{name}──▶ Index ──▶ AgentAddr
+       ──GET facts_url        ──▶ Agent ──▶ SignedAgentFacts
+       verify(public_key, facts, sig) ──▶ ✅
+```
+
+Agents started with `run_demo.py` or without a `--registration-type` flag use this mode.
+
+---
+
+### Enterprise-routed
+
+Designed for agents deployed inside a private enterprise network behind an API gateway (e.g., Kong, Apigee, AWS API Gateway). The agent still self-registers and signs its own facts, but the registration record also carries the gateway's public URL in `gateway_url`.
+
+```
+Agent ──POST /register──▶ NANDA Index
+         {name, facts_url, public_key_hex,
+          registration_type: "enterprise",
+          gateway_url: "https://api-gw.corp.example/agents/my-agent"}
+
+Client ──GET /resolve/{name}──▶ Index ──▶ AgentAddr  (includes gateway_url)
+       ──GET facts_url        ──▶ Gateway ──▶ Agent ──▶ SignedAgentFacts
+       verify(public_key, facts, sig) ──▶ ✅
+```
+
+The resolver receives the `gateway_url` alongside `facts_url` so it can route traffic through the enterprise perimeter. Cryptographic verification is identical — the gateway is transparent to the trust model.
+
+Start an enterprise-type agent via:
+
+```bash
+python agent_server.py \
+  --name my-agent \
+  --port 7705 \
+  --registration-type enterprise \
+  --gateway-url https://api-gw.corp.example/agents/my-agent
+```
+
+---
+
+### DID-based
+
+Uses a [Decentralized Identifier](https://www.w3.org/TR/did-core/) as the agent's primary identity. When `registration_type` is `did`, two things change:
+
+1. `agent_id` is automatically formatted as `did:nanda:{name}` (if it doesn't already start with `did:`)
+2. `did_document_url` is set to `{index_url}/did/{name}`, where the NANDA Index serves a minimal W3C DID document
+
+The DID document (`GET /did/{name}`) embeds the agent's Ed25519 public key in a `verificationMethod` and links to the facts endpoint via a `service` entry — making the agent discoverable through a standard DID resolver without any custom tooling.
+
+```json
+{
+  "@context": ["https://www.w3.org/ns/did/v1"],
+  "id": "did:nanda:code-review-agent",
+  "verificationMethod": [{
+    "id": "did:nanda:code-review-agent#key-1",
+    "type": "Ed25519VerificationKey2020",
+    "controller": "did:nanda:code-review-agent",
+    "publicKeyHex": "67a63202eb0a4f3d…"
+  }],
+  "authentication": ["did:nanda:code-review-agent#key-1"],
+  "service": [{
+    "id": "did:nanda:code-review-agent#agent-facts",
+    "type": "NANDAAgentFacts",
+    "serviceEndpoint": "http://127.0.0.1:7703/facts"
+  }]
+}
+```
+
+```
+Agent ──POST /register──▶ NANDA Index
+         {agent_id: "did:nanda:my-agent",
+          registration_type: "did",
+          did_document_url: "http://127.0.0.1:7700/did/my-agent", …}
+
+Client ──GET /did/my-agent      ──▶ Index ──▶ DID document (public key + facts URL)
+       ──GET facts_url          ──▶ Agent ──▶ SignedAgentFacts
+       verify(public_key, facts, sig) ──▶ ✅
+```
+
+Start a DID-registered agent via:
+
+```bash
+python agent_server.py --name my-agent --port 7706 --registration-type did
+```
+
+---
+
+### Comparison
+
+| | Native | Enterprise | DID-based |
+|---|---|---|---|
+| Dashboard badge | `NATIVE` (blue) | `ENTERPRISE` (yellow) | `DID` (purple) |
+| `agent_id` format | `nanda:did:agent:…` | `nanda:did:agent:…` | `did:<method>:<id>` |
+| Extra field | — | `gateway_url` | `did_document_url` |
+| Key discovery | `AgentAddr.public_key_hex` | `AgentAddr.public_key_hex` | DID document `verificationMethod` |
+| Trust anchor | NANDA Index | NANDA Index + gateway | DID method + NANDA Index |
+| Extra validation | URL check | `gateway_url` required | `agent_id` must start with `did:` |
+| New endpoint | — | — | `GET /did/{name}` |
+
+All three types produce a `SignedAgentFacts` document verified with **the same `verify_payload()` call** — the registration type affects *how an agent is discovered*, not *how its facts are verified*.
+
+---
+
 ## Project Structure
 
 ```
